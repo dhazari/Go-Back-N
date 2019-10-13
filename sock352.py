@@ -71,26 +71,28 @@ class socket:
         header = self.create_header(SOCK352_SYN, seqNum, 0, 0, 0)
 
         #send old info and recieve updted info from client to server and vice versa till info is recieved
-        acknowledge = False
-        while not acknowledge:
+        flag = 0
+        while (flag != SOCK352_SYN | SOCK352_ACK):
             try:
                 self.sock.sendto(header,(address[0],transmitter))
                 print("Connection request sent from client to server")
                 data = self.sock.recvfrom(header_len)[0]
-                acknowledge = True
+                
+                #unpack recieved data to test flags for rejection/acceptance
+                self.newHeader = struct.unpack(sock352PktHdrData, data)
+                flag = self.newHeader[1]
+                
             except syssock.timeout:
                 print("Timed out, resending")
                 pass
 
-        #unpack recieved data to test flags for rejection/acceptance
-        self.newHeader = struct.unpack(sock352PktHdrData, data)
-        flag = self.newHeader[1]
-
         if(flag == SOCK352_SYN | SOCK352_ACK):
             print("Connection Recieved")
+            print("Connect sequence number: ", seqNum)
             pass
         elif (flag == SOCK352_RESET):
             print("Connection Rejected")
+            print("Connect sequence number: ", seqNum)
             pass
         else:
             print("error")
@@ -118,14 +120,15 @@ class socket:
 
         if self.connected:
             flag = SOCK352_RESET
-            seqNum = self.newHeader[8]
+            seqNum +=1
             ackNum = self.newHeader[8]+1
         else:
             flag = SOCK352_ACK | SOCK352_SYN
-            #should this be another variable for seqNum?
+            ackNum = seqNum+1
             seqNum = random.randint(1,100)
-            ackNum = self.newHeader[8]+1
             self.connected = True
+            
+        print("Accept sequence number: ", seqNum, self.connected, ackNum)
 
         #create new header and send it to client with updated information
         connect_response = self.create_header(flag, seqNum, ackNum, 0, 0)
@@ -150,10 +153,10 @@ class socket:
         while not acknowledge:
             try:
                 if (self.server):
-                    self.sock.sendto(header,('localhost', self.clientAddress[1]))
+                    self.sock.sendto(header,self.clientAddr)
                     print("Acknowledgement to close sent to client")
                 else:
-                    self.sock.sendto(header,(self.address[0],transmitter))
+                    self.sock.sendto(header,self.servAddr)
                     print("Acknowledgement to close sent to server")
                 data = self.sock.recvfrom(header_len)[0]
                 acknowledge = True
@@ -166,7 +169,7 @@ class socket:
         flag = self.newHeader[1]  
         
         #Flag is set to ACK flag if it responds with ACK (data!=None) and FIN (flag)
-        if(flag==SOCK352_FIN and data!=None):
+        if(flag==SOCK352_FIN):
             header = self.create_header(SOCK352_ACK,seqNum,0,0,0)
             print("Closing packet")
             self.sock.close()
@@ -199,7 +202,7 @@ class socket:
             print(seqNum)
             
             #Start the loop of sending the correct packet
-            while(tempAckFlag+1 != seqNum):
+            while(tempAckFlag != seqNum):
                 
                 #try sending and recieving the data
                 try:
@@ -219,18 +222,18 @@ class socket:
             bytessent+= tempBytes
             seqNum+=1
  
-        return b(bytessent)
+        return bytes(bytessent)
 
     def recv(self,nbytes):
     
-       global seqNum
-        
+        global seqNum
+
         message = "" 
-        
+            
         while(nbytes>0):
-            
+
             tempSeqNum = -1
-            
+
             while(tempSeqNum != seqNum):
                 
                 data = self.sock.recvfrom(header_len)[0]
@@ -250,12 +253,9 @@ class socket:
             nbytes-= len(newHeader[header_len:]) 
             seqNum+=1
             
-            print(message)   
-            
-            
+        print(message)   
         
-        
-        return bytes(4)
+        return bytes(message)
 
     def create_header (self, flags, seqNumbo, ackNum, window, payLoad):
 
