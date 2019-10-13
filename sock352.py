@@ -223,10 +223,34 @@ class socket:
 
     def recv(self,nbytes):
     
-       # bytesreceived = 0  
+       global seqNum
         
-       # while(nbytes>0):
-       #     (header, self.address) = self.sock.recvfrom(int(header_len))
+        message = "" 
+        
+        while(nbytes>0):
+            
+            tempSeqNum = -1
+            
+            while(tempSeqNum != seqNum):
+                
+                data = self.sock.recvfrom(header_len)[0]
+                self.newHeader = struct.unpack(sock352PktHdrData, data)
+                tempSeqNum = self.newHeader[8]
+                
+                print("recv Temp Sequence Number: ",tempSeqNum)
+                print("recv Sequence Number: ",seqNum)
+                
+                if(tempSeqNum != seqNum):
+                    print("Incorrect sequence order, get next packet")
+                    
+                header = self.create_header(SOCK352_ACK, 0, tempSeqNum, 0, 0)
+                tempBytes = self.sock.sendto(header,self.clientAddr)
+              
+            message += self.newHeader[header_len:]
+            nbytes-= len(newHeader[header_len:]) 
+            seqNum+=1
+            
+            print(message)   
             
             
         
