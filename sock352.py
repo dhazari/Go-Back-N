@@ -96,6 +96,17 @@ class socket:
             pass
         else:
             print("error")
+        
+        #send acknowledgement to server
+        ackNum = seqNum+1
+        
+        try:
+            header = self.create_header(SOCK352_ACK, 0, ackNum, 0, 0)
+            self.sock.sendto(header,(address[0],transmitter))
+            print("Acknowledgement sent to server")
+        except syssock.timeout:
+                print("Timed out, resending")
+                pass
 
         return 
     
@@ -118,22 +129,33 @@ class socket:
         #unpack info so you can maipulate sequence nuber and acknowledgement number
         self.newHeader = struct.unpack(sock352PktHdrData, header)
 
-        if self.connected:
-            flag = SOCK352_RESET
-            seqNum +=1
-            ackNum = self.newHeader[8]+1
-        else:
-            flag = SOCK352_ACK | SOCK352_SYN
-            ackNum = seqNum+1
-            seqNum = random.randint(1,100)
-            self.connected = True
+        if(self.newHeader[1] == SOCK352_SYN):
+            print("SYN recieved")
+            if self.connected:
+                flag = SOCK352_RESET
+                seqNum +=1
+                ackNum = self.newHeader[8]+1
+            else:
+                flag = SOCK352_ACK | SOCK352_SYN
+                ackNum = seqNum+1
+                seqNum = random.randint(1,100)
+                self.connected = True
             
         print("Accept sequence number: ", seqNum, self.connected, ackNum)
 
         #create new header and send it to client with updated information
         connect_response = self.create_header(flag, seqNum, ackNum, 0, 0)
         self.sock.sendto(connect_response,('localhost', self.clientAddress[1]))
-        print("Connection response sent from server to client")
+        print("Connection response sent from server to client")        
+        
+        #recieve acknowledgement fro client
+        data = self.sock.recvfrom(header_len)[0]
+        self.newHeader = struct.unpack(sock352PktHdrData, data)
+        
+        if(self.newHeader[1] == SOCK352_ACK):
+            print("Acknowledgement recieved")
+        else:
+            print("Acknowledgement flag not set")
 
         return self,self.clientAddress
     
