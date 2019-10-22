@@ -66,6 +66,7 @@ class socket:
         
         #generate random number
         seqNum = random.randint(1,100)
+        print ("seqNum1: ",seqNum)
 
         #Create header
         header = self.create_header(SOCK352_SYN, seqNum, 0, 0, header_len)
@@ -85,31 +86,36 @@ class socket:
             except syssock.timeout:
                 print("Timed out, resending")
                 pass
-
+        
+        #Check if correct flags were recieved
         if(flag == SOCK352_SYN | SOCK352_ACK):
             print("Connection Recieved")
-            print("Connect sequence number: ", seqNum)
+            print("Connect sequence number2: ", seqNum)
             pass
         elif (flag == SOCK352_RESET):
             print("Connection Rejected")
-            print("Connect sequence number: ", seqNum)
+            print("Connect sequence number2: ", seqNum)
             pass
         else:
             print("error")
         
         #send acknowledgement to server
-        ackNum = self.newHeader[9]
+        ackNum = self.newHeader[8]+1
+        seqNum = self.newHeader[9]
+        
+        print ("seqNum3: ",seqNum)
+        print("ackNum: ", ackNum)
         
         try:
-            header = self.create_header(SOCK352_ACK, 0, ackNum, 0, header_len)
+            header = self.create_header(SOCK352_ACK, seqNum, ackNum, 0, header_len)
             self.sock.sendto(header,(address[0],transmitter))
             print("Acknowledgement sent to server")
         except syssock.timeout:
-                print("Timed out, resending")
-                pass
+            print("Timed out, resending")
+            pass
 
-        return 
-    
+        return
+  
     def listen(self,backlog):
         return
 
@@ -128,7 +134,10 @@ class socket:
 
         #unpack info so you can maipulate sequence nuber and acknowledgement number
         self.newHeader = struct.unpack(sock352PktHdrData, header)
-
+        
+        print(self.newHeader[1])
+        
+        continueFlag = True
         if(self.newHeader[1] == SOCK352_SYN):
             print("SYN recieved")
             if self.connected:
@@ -140,24 +149,42 @@ class socket:
                 ackNum = seqNum+1
                 seqNum = random.randint(1,100)
                 self.connected = True
+        #destoy connection
+        elif (flag == SOCK352_FIN):
+            continueFlag = False
+            #Sending Fin and Ack
+            print("Closing")
+            header = self.create_header(SOCK352_ACK, 0, seqNum+1, 0, header_len)   
+            self.sock.sendto(header,self.clientAddr)
+            print("Acknowledgement sent")
+            seqNum = random.randint(1,100)
+            header = self.create_header(SOCK352_FIN, seqNum, 0, 0, header_len)   
+            self.sock.sendto(header,self.clientAddr)
             
-        print("Accept sequence number: ", seqNum, self.connected, ackNum)
-
-        #create new header and send it to client with updated information
-        connect_response = self.create_header(flag, seqNum, ackNum, 0, header_len)
-        self.sock.sendto(connect_response,('localhost', self.clientAddress[1]))
-        print("Connection response sent from server to client")        
+            #Recieving Ack
+            data = self.sock.recvfrom(header_len)[0]
+            self.newHeader = struct.unpack(sock352PktHdrData, data)
+            if(newHeader[1] == SOCK352_ACK):
+                print("Server + Client closed")
         
-        #recieve acknowledgement fro client
-        data = self.sock.recvfrom(header_len)[0]
-        self.newHeader = struct.unpack(sock352PktHdrData, data)
-        
-        if(self.newHeader[1] == SOCK352_ACK):
-            print("Acknowledgement recieved")
-        else:
-            print("Acknowledgement flag not set")
+        if(continueFlag == True):           
+            print("Accept sequence number: ", seqNum, self.connected, ackNum)
 
-        return self,self.clientAddress
+            #create new header and send it to client with updated information
+            connect_response = self.create_header(flag, seqNum, ackNum, 0, header_len)
+            self.sock.sendto(connect_response,('localhost', self.clientAddress[1]))
+            print("Connection response sent from server to client")        
+            
+            #recieve acknowledgement fro client
+            data = self.sock.recvfrom(header_len)[0]
+            self.newHeader = struct.unpack(sock352PktHdrData, data)
+            
+            if(self.newHeader[1] == SOCK352_ACK):
+                print("Acknowledgement recieved")
+            else:
+                print("Acknowledgement flag not set")
+
+            return self,self.clientAddress
     
     def close(self):
     
@@ -174,35 +201,24 @@ class socket:
         acknowledge = False
         while not acknowledge:
             try:
-                if (self.server):
-                    self.sock.sendto(header,self.clientAddr)
-                    print("Acknowledgement to close sent to client")
-                else:
-                    self.sock.sendto(header,self.servAddr)
-                    print("Acknowledgement to close sent to server")
+                self.sock.sendto(header,self.servAddr)
+                print("Acknowledgement to close sent to server")
                 data = self.sock.recvfrom(header_len)[0]
                 acknowledge = True
             except syssock.timeout:
                 print("Timed out, resending")
                 pass
         
-        if data!=None:        
-            #Chack if flags recieved are FIN and ACK 
-            self.newHeader = struct.unpack(sock352PktHdrData, data)
-            flag = self.newHeader[1]  
-            
-            #Flag is set to ACK flag if it responds with ACK (data!=None) and FIN (flag)
-            if(flag==SOCK352_FIN):
-                header = self.create_header(SOCK352_ACK,seqNum,0,0,header_len)
-                print("Closing packet")
-                self.sock.close()
-            else:
-                print("Wrong flags recieved")
-                pass
-        else:
+        #recieve ack
+        self.newHeader = struct.unpack(sock352PktHdrData, data)
+        flag = self.newHeader[1]  
+        if(flag==SOCK352_ACK):
             self.sock.close()
+            #self.sock.shutdown(self.sock.SHUT_RDWR)
+        else:
+            print("error")
             
-        self.sock.close()
+        print(flag)
                 
         return 
 
@@ -234,7 +250,8 @@ class socket:
                 
                 #try sending and recieving the data
                 try:
-                    tempBytes = self.sock.sendto((pckgHeader+package),self.servAddr)
+                    tempBytes1 = self.sock.sendto(pckgHeader,self.servAddr)
+                    tempBytes2 = self.sock.sendto(package,self.servAddr)
                     print("Data has been sent from client to server ", package)
                     (data,address) = self.sock.recvfrom(header_len)
                     acknowledged = True
@@ -272,17 +289,23 @@ class socket:
         message = "" 
             
         while(nbytes>0):
-                
+        
+            print("bytes:" ,nbytes)
+            
             data = self.sock.recvfrom(header_len)[0]
             self.newHeader = struct.unpack(sock352PktHdrData, data)
             seqNum = self.newHeader[8]+1
             tempAckNum = self.newHeader[8]
+            
+            mess = self.sock.recvfrom(64000)[0]
        
             header = self.create_header(SOCK352_ACK, seqNum, tempAckNum, 0, header_len)
             tempBytes = self.sock.sendto(header,self.clientAddr)
               
-            message += data[header_len:]
-            nbytes-= len(data[header_len:]) 
+            message += mess
+            nbytes-= len(mess) 
+            
+            
             
             print("curr Message:" ,message)   
         
