@@ -129,16 +129,15 @@ class socket:
         #unpack info so you can maipulate sequence nuber and acknowledgement number
         self.newHeader = struct.unpack(sock352PktHdrData, header)
         
-        continueFlag = True
         if(self.newHeader[1] == SOCK352_SYN):
             print("SYN recieved")
             if self.connected:
                 flag = SOCK352_RESET
-                seqNum +=1
+                seqNum = self.newHeader[8]+1
                 ackNum = self.newHeader[8]+1
             else:
                 flag = SOCK352_ACK | SOCK352_SYN
-                ackNum = seqNum+1
+                ackNum = self.newHeader[8]+1
                 seqNum = random.randint(1,100)
                 self.connected = True
 
@@ -295,7 +294,7 @@ class socket:
                     length -= 64000
                     buffer = buffer[64000:]
                     bytessent+= tempBytes
-                    seqNum+=1
+                    seqNum=self.newHeader[8]+1
                     pass
                 else:
                     print("Timed out")
