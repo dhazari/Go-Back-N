@@ -2,9 +2,9 @@ import binascii
 import socket as syssock
 import struct
 import sys
-
 import random
 
+# final project to be submitted
 # these functions are global to the class and
 # define the UDP ports all messages are sent
 # and received from
