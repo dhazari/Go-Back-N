@@ -1,7 +1,9 @@
 # Go-Back-N
 
-Dhrishti hazari, netID: dah253
+Dhrishti Hazari, netID: dah253
+
 Diana Del Gaudio, netID: dmd424
+
 Python version 2.7.5
 
 The Connect/Accept works by implementing a 3-way handshake.
