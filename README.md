@@ -1,8 +1,8 @@
 # Go-Back-N
 
 Dhrishti hazari, netID: dah253
-Partner: Diana Del Gaudio
-Python version 2
+Diana Del Gaudio, netID: dmd424
+Python version 2.7.5
 
 The Connect/Accept work as a normal 3-way handshake.
 
