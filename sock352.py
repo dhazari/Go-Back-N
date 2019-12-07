@@ -2,299 +2,322 @@ import binascii
 import socket as syssock
 import struct
 import sys
-import thread
 import random
+import threading
 import time
 
-receiver = -1
-transmitter = -1
-sock352PktHdrData = "!BBBBHHLLQQLL"
-udpPkt_hdr_data = struct.Struct(sock352PktHdrData)
-header_len = struct.calcsize(sock352PktHdrData)
-ackNum = None
-seqNum = None
-fin_received = False
-error = False
-other_address = None
-last_acked = 0
-data_to_return = ''
-finished = False
-FRAGMENT_SIZE = 63960
+sock352PktHdrData = '!BBBBHHLLQQLL'
+udpPkt_hdr_data = struct.Struct(sock352PktHdrData)  
+header_len = 40
+seqNum = 0
 
-SYN = 0x01
-DATA = 0x03
-FIN = 0x02
-ACK = 0x04
-RESET = 0x08
-HAS_OPT = 0xA0
+SOCK352_SYN = 0x01
+SOCK352_FIN = 0x02
+SOCK352_ACK = 0x04
+SOCK352_RESET = 0x08
+SOCK352_HAS_OPT = 0xA0
+SOCK352_DATA = 0x23
 
+PACKET_SIZE = 32000
+isClient = False
 
-# these functions are global to the class and
-# define the UDP ports all messages are sent
-# and received from
+def init(UDPportTx,UDPportRx):
 
-def init(UDPportTx, UDPportRx):  # initialize your UDP socket here
-    global receiver, transmitter
-    receiver = int(UDPportRx)
-    transmitter = int(UDPportTx)
+    global sock, reciever, transmitter
+    sock = syssock.socket(syssock.AF_INET, syssock.SOCK_DGRAM)
+    reciever = int(UDPportRx)
+    
+    if(UDPportTx == ''):
+        transmitter = int(UDPportRx)
+    else:
+        transmitter = int(UDPportTx)
 
+    sock.bind(('', reciever))
+    sock.settimeout(0.2);
+    
+    pass
 
 class socket:
-    sock = None
 
     def __init__(self):
-        global sock
-        sock = syssock.socket(syssock.AF_INET, syssock.SOCK_DGRAM)
-        sock.bind(('', receiver))
-        print('Socket initialized')
-        
-        self.connected = False
+        recAddress = ""
+        receivedData = ""
+        closeAddress = ""
+        lastAck = -1
+        allAcknowledged = False
+        resend = False
         return
 
-    def bind(self, address):
+    def bind(self,address):
         return
 
-    def connect(self, address):
-        global seqNum, ackNum, other_address
+    def connect(self,address):
+    
+        global sock, seqNum, header_len, isClient, transmitter
         
-        #other_address is the server_address
-        other_address = (address[0], transmitter)
+        #Is currently client
+        print("Attempting Connection")
+        isClient = True
         
         #generate random number
-        seqNum = random.randint(1,100)
+        seqNum = int(random.randint(1, 100))
         
         #create header
-        s_header = self.create_header(SYN, seqNum, 0, 0)
-        sock.sendto(s_header, other_address)
-        print("Connection request sent from client to server")
+        data = self.create_header(SOCK352_SYN, header_len, seqNum, 0, 0)
         
-        #Recieve Connection
-        packet = sock.recv(header_len)
-        r_header = struct.unpack(sock352PktHdrData, packet)
-        if SYN == r_header[1] and seqNum == r_header[9]:
-            ackNum = r_header[8]
-            print("Connection Recieved")
-        else:
-            print("Connection Rejected")
+        #set temp seq and ack variables
+        tempAck = -1;
+        tempSeq = 0;
+        
+        #send old info and recieve updted info from client to server and vice versa till info is recieved
+        while True:
+            print("Connection request sent from client to server")
             
+            sock.sendto(data,(address[0],transmitter))
+            serverData = self.getData()
+            
+            #test flags for rejection/acceptance
+            tempAck = serverData[9]
+            if tempAck == seqNum + 1:
+                tempSeq = serverData[8] + 1
+                print("Connection Recieved")
+                break
+            else:
+                print("Connection Rejected")
+        
         #send acknowledgement to server
-        try:
-            header = self.create_header(ACK, seqNum, ackNum, 0)
-            sock.sendto(header,other_address)
-            print("Acknowledgement sent to server")
-        except syssock.timeout:
-            print("Timed out, resending")
-            pass
+        ackData = self.create_header(SOCK352_ACK, header_len, seqNum, tempSeq, 0)
+        sock.sendto(ackData, (address[0], transmitter))
+        print("Acknowledgement sent to server")
+
+        sock.connect((address[0], transmitter))
+        seqNum += 1
+        print("Connected")
+        
         return
 
-    def listen(self, backlog):
+    def listen(self,backlog):
         return
 
     def accept(self):
-        global seqNum, ackNum, other_address
+        
+        global sock, reciever, seqNum, header_len, recAddress, isClient
+        
+        print("Attempting to connect to server ")
+        
+        #is currently the server
+        isClient = False
+        updatedStruct = ""
         
         #recieve info from client
-        (r_packet, address) = sock.recvfrom(header_len)
-        other_address = (address[0], transmitter)
+        while(True):
+            updatedStruct = self.getData()
+            flag = updatedStruct[1]
+            
+            if(flag == SOCK352_SYN):
+                print("SYN received")
+                seqNum = updatedStruct[8]
+                break
         
-        #unpack info so you can maipulate sequence nuber and acknowledgement number
-        r_header = struct.unpack(sock352PktHdrData, r_packet)
-        
-        if (SYN == r_header[1]):
-            print("SYN recieved")
-            if self.connected:
-                flag = RESET
-                seqNum = r_header[8]+1
-                ackNum = sr_header[8]
+        #set new sequence number and increment ackNumber by 1 of og seqNum       
+        newSeqNum = int(random.randint(1, 100))
+        struct = self.create_header(SOCK352_SYN | SOCK352_ACK, header_len, newSeqNum, seqNum+1, 8)
+        sock.sendto(struct, recAddress)
+        print("Connection response sent from server to client")
+
+        #recieve acknowledgement flag from client
+        while(True):
+            updatedStruct = self.getData()
+            if(updatedStruct[1] == SOCK352_ACK):
+                print("Acknowledgement recieved")
+                seqNum = updatedStruct[8]
+                break
             else:
-                flag = ACK | SYN
-                ackNum = r_header[8]
-                seqNum = random.randint(1,100)
-                self.connected = True
-                
-            s_header = self.create_header(SYN, seqNum, ackNum, 0)
-            sock.sendto(s_header, other_address)
-            print("Connection response sent from server to client")  
-        else:
-            sys.exit('SYN flag missing')
-            
-        #recieve acknowledgement fro client
-        data = sock.recvfrom(header_len)[0]
-        r_header = struct.unpack(sock352PktHdrData, data)
+                print("Acknowledgement flag not set")
+
+        seqNum = seqNum+1
+        print("Connection Established")
         
-        if(r_header[1] == ACK):
-            print("Acknowledgement recieved")
-        else:
-            print("Acknowledgement flag not set")
+        (clientsocket, address) = (socket(), recAddress)
+        return (clientsocket, address)
+
+    def getData(self):
+        global sock, sock352PktHdrData, recAddress, receivedData, closeAddress
+        
+        try:
+            (message, sendAddress) = sock.recvfrom(32500)
+        except syssock.timeout:
+            return[0,0,0,0,0,0,0,0,0,0,0,0]
             
-        print('Successfully accepted connection')
-        return self, other_address
+        (head, body) = (message[:40], message[40:])
+        
+        newStruct = struct.unpack(sock352PktHdrData, head)
+        
+        if(head[1] == SOCK352_SYN or SOCK352_ACK or (SOCK352_SYN | SOCK352_ACK) or SOCK352_FIN or (SOCK352_FIN | SOCK352_ACK)):
+            closeAddress = sendAddress
+            recAddress = sendAddress
+            receivedData = body;
+            
+        return newStruct
 
     def close(self):
-        global sock
-        print("Closing . . .")
-        sock.close()
-
-    def send(self, buffer):
-        print("Starting send . . .")
-        global last_acked, finished
+        global isClient, sock, header_len, transmitter, recAddress, closeAddress
         
-        last_acked = 0
-        packets = list()
-        
-        fragments = 0
-        remainder = 0
-        size = len(buffer)
-        finished = False      
-        bytes_sent = 0
-        go_back_n = False
-        fragment = 0
-        i = 0
-        start = 0
-     
-        #Calculate how many fragements to sent
-        if size > FRAGMENT_SIZE:
-            fragments = len(buffer) / FRAGMENT_SIZE
-            remainder = len(buffer) % FRAGMENT_SIZE
-            size = FRAGMENT_SIZE
-
-        while i <= fragments or go_back_n:
-            total_sent = 0
-
-            if go_back_n:
-                i = last_acked + 1
-                print("Go back n")
-                size = len(packets[i])
-                go_back_n = False
-
-            elif fragments > 0:
-
-                if i == fragments and remainder > 0:
-                    size = remainder
-                    fragment = buffer[bytes_sent:]
-
-                elif i == fragments and remainder == 0:
+        if(isClient):
+            print("Disconnect from Server")
+            
+            #generate random temp seqNum
+            closeNum = random.randint(1,100)
+            headerFile = self.create_header(SOCK352_FIN, header_len, closeNum, 0, 0)
+            
+            #temp ack and seq num
+            tempAck = -1
+            closeNumServ = 0;
+            
+            while True:
+                #send FIN flag
+                sock.sendto(headerFile, recAddress)
+                print("FIN flag to close sent to server")
+                
+                serverData = self.getData()
+                tempAck = serverData[9]
+                if tempAck == closeNum + 1:
+                    closeNumServ = serverData[8] + 1
+                    print("FIN-ACK flag recieved")
                     break
-
                 else:
-                    fragment = buffer[bytes_sent:(bytes_sent + FRAGMENT_SIZE)]
-            else:
-                fragment = buffer[:]
-
-            if i == len(packets):
-                header = self.create_header(DATA, i, 0, size)
-                packets.append(header+fragment)
-
-            while total_sent < len(packets[i]):
-                sent = sock.sendto((packets[i])[total_sent:], other_address)
-                if sent == 0:
-                    raise RuntimeError("socket broken")
-                else:
-                    print('Sent ' + str(sent) + 'bytes')
-                    total_sent += sent
-
-            if i >= last_acked:
-                bytes_sent += total_sent - header_len
-
-            if start:
-
-                if last_acked == i - 1 or last_acked == i:
-                    start = time.time()
-                elif last_acked > i:
-                    i = last_acked
-                elif last_acked < i - 1 and time.time() - start >= 0.2:
-                    go_back_n = True
-
-            else:
-                start = time.time()
-                thread.start_new_thread(self.__receive, ())
-
-            i += 1
-
-        finished = True
-        return bytes_sent
-
-    def __receive(self):
-        print("Started receiving ack packets for send . . .")
-        global last_acked
-        while not finished:
-            r_header = sock.recv(header_len)
-            header = struct.unpack(sock352PktHdrData, r_header)
-            last_acked = header[9]
+                    print("FIN-ACK flag not sent")
+            
+            #send acknowledgement to close
+            ackData = self.create_header(SOCK352_ACK, header_len, closeNum, closeNumServ, 0)
+            sock.sendto(ackData, closeAddress)
+            print("Acknowledgement to close sent to server")
+            sock.close()
+            print("Closed")
+            return
+            
+        else:
+            print("Disconnect from Client")
+            
+            #temp seqNum
+            updatedStruct = ""
+            updatedSeqNum = 0
+            
+            while(True):
+                updatedStruct = self.getData()
+                flag = updatedStruct[1]
+                if(flag == SOCK352_FIN):
+                    print("FIN flag to close sent to client")
+                    updatedSeqNum = updatedStruct[8]
+                    break
+            
+            #temp seq Num to recieve fin|Ack flag        
+            closeNum = int(random.randint(1, 100))
+            temp_header = self.create_header(SOCK352_FIN | SOCK352_ACK, header_len, closeNum, updatedSeqNum + 1, 8)
+            sock.sendto(temp_header, closeAddress)
+            print("FIN-ACK flag sent")
+            
+            #recieve acknowledgement
+            while True:
+                header = self.getData()
+                if(header[1] == SOCK352_ACK):
+                    print("Acknowledgement to close revieved")
+                    break
+            sock.close()
+            print("Closed")
+            
         return
 
-    def recv(self, nbytes):
-    
-        print('Receiving' + str(nbytes) + 'bytes')
-        
-        i = 0
-        fragments = 0
-        remainder = 0
-        finalMsg = ""
-        
-        if nbytes > FRAGMENT_SIZE:
-            fragments = nbytes / FRAGMENT_SIZE
-            remainder = nbytes % FRAGMENT_SIZE
-            
-        if fragments == 0:
-            fragement = sock.recv(nbytes+header_len)
-            msg = fragement[header_len:]
-            finalMsg = msg
-            
-        while i < fragments:
-        
-            fragment = ''
-            size = FRAGMENT_SIZE + header_len
+    def send(self,buffer):
+        global seqNum, sock, lastAck
+        lastAck = -1
+        seqNum = 0
 
-            while size > 0:
-                
-                if size >= FRAGMENT_SIZE+header_len:
-                    fragment = sock.recv(FRAGMENT_SIZE+header_len)
-                else:
-                    fragment = sock.recv(size)
-                    
-                size -= len(fragment)
-                
-            packet = fragment[:header_len]
-            packet = struct.unpack(sock352PktHdrData, packet)
-            
-            if i == packet[8]:
-                finalMsg += fragment[header_len:]
-                
-                ack_packet = self.create_header(ACK, 0, i, 0)
-                sock.sendto(ack_packet, other_address)
-                i += 1
-            else:
+        lock = threading.Lock()
+        sendDataThread = threading.Thread(target = self.sendData, args=(lock, buffer))
+        ackDataThread = threading.Thread(target = self.ackData, args=(lock, buffer))
+
+        sendDataThread.start()
+        ackDataThread.start()
+
+        sendDataThread.join()
+        ackDataThread.join()
+
+        bytessent = len(buffer)
+        return bytessent
+
+    def sendData(self, lock, buffer):
+        global sock, seqNum, lastAck, allAcknowledged, resend
+        
+        allAcknowledged = False
+        resend = False
+        finalData = [buffer[i:i+PACKET_SIZE] for i in range(0, len(buffer), PACKET_SIZE)]
+        print(finalData,+" \n\n\n\n\n")
+        while(allAcknowledged == False):
+            if(seqNum == len(finalData)):
+                #the idea here is that incase seqNum == len(finalData) meaning,
+                #all data is sent as of now, then we will keep iterating through
+                #the while loop untill allAcknowledged is true or until seqNum is changed (when some packet is dropped)
                 continue
-                
-        if remainder > 0:
-        
-            fragment = ''
-            size = remainder + header_len
+            currPayLoad = finalData[seqNum]
+            currPayLoadLen = len(currPayLoad)
+            newStruct = self.create_header(SOCK352_DATA, header_len, seqNum, 0, currPayLoadLen)
+            lock.acquire()
+            if(resend == True):
+                print("RESENT DROPPED PACKET seqNum: " + str(seqNum))
+                resend = False
+                lock.release()
+                continue
+            else:
+                sock.send(newStruct+currPayLoad)
+                seqNum += 1
+                lock.release()
+        pass
 
-            while size > 0:
-                
-                if size >= remainder + header_len:
-                    fragment = sock.recv(remainder+header_len)
-                else:
-                    fragment = sock.recv(size)
-                    
-                size -= len(fragment)
-                
-            packet = fragment[:header_len]
-            packet = struct.unpack(sock352PktHdrData, packet)
-            
-            if i == packet[8]:
-                finalMsg += fragment[header_len:]
-                
-                ack_packet = self.create_header(ACK, 0, i, 0)
-                sock.sendto(ack_packet, other_address)
-                i += 1
-                
-        return finalMsg
-        
-    def create_header (self, flags, seqNumbo, ackNum, payLoad):
+    def ackData(self, lock, buffer):
+        global seqNum, lastAck, allAcknowledged, resend
+        finalData = [buffer[i:i+PACKET_SIZE] for i in range(0, len(buffer), PACKET_SIZE)]
+        t0 = time.time()
+        while True:
+            newStruct = self.getData()
+            if(newStruct[0] == 0 and time.time() >= t0+0.2):
+                lock.acquire()
+                resend = True
+                seqNum = lastAck+1
+                t0 = time.time()
+                lock.release()
+            elif(newStruct[0] != 0):
+                lastAck = newStruct[9]
+                if(lastAck == len(finalData)-1):
+                    break
+        allAcknowledged = True
+        pass
 
+    def recv(self,nbytes):
+        global seqNum, sock, receivedData, recAddress
+        seqNum = 0
+        receivedData = ""
+        finalData = ""
+        counter = 0
+        while(counter != nbytes):
+	    
+            recvSeqNum = -1
+            while(recvSeqNum != seqNum):
+                newStruct = self.getData()
+                print(newStruct)
+                #at this point, receivedData is loaded with the actual data
+                recvSeqNum = newStruct[8]
+                                             
+            newStruct = self.create_header(SOCK352_ACK, header_len, 0, seqNum,0)
+            sock.sendto(newStruct, recAddress)
+            counter += len(receivedData)
+            finalData += receivedData
+            seqNum += 1
+        return finalData
+        
+    def create_header(self, newFlags, newHeader_len, newSeqNo, newAckNo, newPayloadLen):
+        global sock
+        
         version = 0x1
         opt_ptr = 0x0
         protocol = 0x0
@@ -302,6 +325,11 @@ class socket:
         source_port = 0x0
         dest_port = 0x0
         window = 0x0
-
-        return udpPkt_hdr_data.pack(version, flags, opt_ptr, protocol, header_len, checksum, source_port, dest_port, seqNumbo, ackNum, window, payLoad)
-  
+        
+        flags = newFlags
+        header_len = newHeader_len
+        sequence_no = newSeqNo
+        ack_no = newAckNo
+        payload_len = newPayloadLen
+        
+        return udpPkt_hdr_data.pack(version, flags, opt_ptr, protocol, header_len, checksum, source_port, dest_port, sequence_no, ack_no, window, payload_len)
