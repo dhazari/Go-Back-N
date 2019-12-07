@@ -7,82 +7,72 @@ import threading
 import time
 
 sock352PktHdrData = '!BBBBHHLLQQLL'
-udpPortTx = -1   #this is the UDPportTX we get as input from client/server to the global init() function
-udpPortRx = -1   #this is the UDPportTX we get as input from client/server to the global init() function
-version = 0x1
-opt_ptr = 0x0
-protocol = 0x0
-checksum = 0x0
-source_port = 0x0
-dest_port = 0x0
-window = 0x0
+udpPkt_hdr_data = struct.Struct(sock352PktHdrData)  
 header_len = 40
 seqNum = 0
 recAddress = ""
 receivedData = ""
 closeAddress = ""
 
-DROP_PACKET_NO = 2
-#MAX_PAYLOAD_SIZE = 64000 #delete this
 SOCK352_SYN = 0x01
 SOCK352_FIN = 0x02
 SOCK352_ACK = 0x04
 SOCK352_RESET = 0x08
-SOCK352_SENTDATA = 0x23
-#PACKET_SIZE = (MAX_PAYLOAD_SIZE + header_len) #delete this
+SOCK352_HAS_OPT = 0xA0
+SOCK352_DATA = 0x23
+
+PACKET_SIZE = 32000
 type = ""
 client = 1
 server = 2
+
 lastAck = -1
 allAcknowledged = False
 resend = False
 
-def init(UDPportTx,UDPportRx):   # initialize your UDP socket here
-    global udpSock, udpPortRx, udpPortTx
-    udpSock = syssock.socket(syssock.AF_INET, syssock.SOCK_DGRAM)
+def init(UDPportTx,UDPportRx):
+
+    global sock, udpPortRx, udpPortTx
+    sock = syssock.socket(syssock.AF_INET, syssock.SOCK_DGRAM)
     udpPortRx = int(UDPportRx)
+    
     if(UDPportTx == ''):
         udpPortTx = int(UDPportRx)
     else:
         udpPortTx = int(UDPportTx)
 
-    udpSock.bind(('', udpPortRx))
-    udpSock.settimeout(0.2);
+    sock.bind(('', udpPortRx))
+    sock.settimeout(0.2);
+    
     pass
 
 class socket:
-    def updateStruct(self, newFlags, newHeader_len, newSeqNo, newAckNo, newPayloadLen):
-        global version, opt_ptr, protocol, checksum, source_port, dest_port, window, udpSock
-        flags = newFlags
-        header_len = newHeader_len
-        sequence_no = newSeqNo
-        ack_no = newAckNo
-        payload_len = newPayloadLen
-        udpPkt_hdr_data = struct.Struct(sock352PktHdrData)
-        return udpPkt_hdr_data.pack(version, flags, opt_ptr, protocol, header_len, checksum, source_port, dest_port, sequence_no, ack_no, window, payload_len)
 
-    def __init__(self):  # fill in your code here
+    def __init__(self):
         return
 
     def bind(self,address):
         return
 
-    def connect(self,address):  # fill in your code here
-        #Send SYN
-        #Receive ACK
-        #Receive SYN
-        #Send ACK
+    def connect(self,address):
+    
+        global sock, seqNum, header_len, type, udpPortTx
+        
         print("Attempting Connection")
-        global udpSock, seqNum, header_len, type, udpPortTx
         type = client
-        seqNum = int(random.randint(10, 500))
-        data = self.updateStruct(SOCK352_SYN, header_len, seqNum, 0, 0)
+        seqNum = int(random.randint(1, 100))
+        
+        data = self.create_header(SOCK352_SYN, header_len, seqNum, 0, 0)
+        
         ackServer = -1;
         seqNumServer = 0;
+        
         while True:
             print("Sent SYN to server")
-            udpSock.sendto(data,(address[0],udpPortTx))
+            
+            sock.sendto(data,(address[0],udpPortTx))
             serverData = self.getData()
+            
             ackServer = serverData[9]
             if ackServer == seqNum + 1:
                 seqNumServer = serverData[8] + 1
@@ -91,11 +81,11 @@ class socket:
             else:
                 print("Failed to receive SYN-ACK")
 
-        ackData = self.updateStruct(SOCK352_ACK, header_len, seqNum, seqNumServer, 0)
-        udpSock.sendto(ackData, (address[0], udpPortTx))
+        ackData = self.create_header(SOCK352_ACK, header_len, seqNum, seqNumServer, 0)
+        sock.sendto(ackData, (address[0], udpPortTx))
         print("Sent ACK to server")
 
-        udpSock.connect((address[0], udpPortTx))
+        sock.connect((address[0], udpPortTx))
         seqNum = seqNum + 1
         print("Connection Established")
         return
@@ -104,14 +94,13 @@ class socket:
         return
 
     def accept(self):
-        #Receive SYN
-        #Send ACK
-        #Send SYN
-        #Receive ACK
-        print("Attempting Connection")
-        global udpSock, udpPortRx, seqNum, header_len, recAddress, type
+    
+        print("Attempting to connect to server ")
+        
+        global sock, udpPortRx, seqNum, header_len, recAddress, type
         type = server
         updatedStruct = ""
+        
         while(True):
             updatedStruct = self.getData()
             flag = updatedStruct[1]
@@ -119,39 +108,45 @@ class socket:
                 print("Received SYN from client")
                 seqNum = updatedStruct[8]
                 break
-        newSeqNum = int(random.randint(10, 500))
-        struct = self.updateStruct(SOCK352_SYN + SOCK352_ACK, header_len, newSeqNum, seqNum+1, 8)
-        udpSock.sendto(struct + "Accepted", recAddress)
+                
+        newSeqNum = int(random.randint(1, 100))
+        struct = self.create_header(SOCK352_SYN | SOCK352_ACK, header_len, newSeqNum, seqNum+1, 8)
+        sock.sendto(struct + "Accepted", recAddress)
         print("Sending SYN-ACK to client")
 
         while(True):
             updatedStruct = self.getData()
             if(updatedStruct[1] == SOCK352_ACK):
-                print("Received ACK from client")
+                print("Receive ACK from client")
                 seqNum = updatedStruct[8]
                 break
 
         seqNum = seqNum+1
         print("Connection Established")
-        (clientsocket, address) = (socket(), recAddress)  # change this to your code
-        return (clientsocket,address)
+        
+        (clientsocket, address) = (socket(), recAddress)
+        return (clientsocket, address)
 
     def getData(self):
-        global udpSock, sock352PktHdrData, recAddress, receivedData, closeAddress
+        global sock, sock352PktHdrData, recAddress, receivedData, closeAddress
+        
         try:
-            (message, sendAddress) = udpSock.recvfrom(32500)
+            (message, sendAddress) = sock.recvfrom(32500)
         except syssock.timeout:
             return[0,0,0,0,0,0,0,0,0,0,0,0]
+            
         (head, body) = (message[:40], message[40:])
+        
         newStruct = struct.unpack(sock352PktHdrData, head)
-        if(head[1] == SOCK352_SYN or  SOCK352_ACK or SOCK352_SYN + SOCK352_ACK or SOCK352_FIN or SOCK352_FIN + SOCK352_ACK):
+        if(head[1] == SOCK352_SYN or  SOCK352_ACK or SOCK352_SYN + SOCK352_ACK or SOCK352_FIN or SOCK352_FIN | SOCK352_ACK):
             closeAddress = sendAddress
             recAddress = sendAddress
             receivedData = body;
             return newStruct
+            
         return newStruct
 
-    def close(self):   # fill in your code here
+    def close(self):
         global type
         if(type == client):
             print("\nAttempting to disconnect from Server")
@@ -162,18 +157,19 @@ class socket:
         return
 
     def closeClient(self):
-        global udpSock, header_len, udpPortTx, recAddress, closeAddress
+        global sock, header_len, udpPortTx, recAddress, closeAddress
         #Send FIN
         #Receive ACK
         #Receive FIN
         #Send ACK
-        closeNum = random.randint(10,500)
-        FINstruct = self.updateStruct(SOCK352_FIN, header_len, closeNum, 0, 0)
+        closeNum = random.randint(1,100)
+        FINstruct = self.create_header(SOCK352_FIN, header_len, closeNum, 0, 0)
         ackServer = -1
         closeNumServ = 0;
+        
         while True:
             print("Sent FIN to server")
-            udpSock.sendto(FINstruct, recAddress)
+            sock.sendto(FINstruct, recAddress)
             serverData = self.getData()
             ackServer = serverData[9]
             if ackServer == closeNum + 1:
@@ -183,10 +179,10 @@ class socket:
             else:
                 print("Failed to receive FIN-ACK")
 
-        ackData = self.updateStruct(SOCK352_ACK, header_len, closeNum, closeNumServ, 0)
-        udpSock.sendto(ackData, closeAddress)
+        ackData = self.create_header(SOCK352_ACK, header_len, closeNum, closeNumServ, 0)
+        sock.sendto(ackData, closeAddress)
         print("Sent ACK to server")
-        udpSock.close()
+        sock.close()
         print("Disconnected Successfully")
         return
 
@@ -196,7 +192,7 @@ class socket:
         #Send ACK
         #Send FIN
         #Receive ACK
-        global udpSock, udpPortRx, header_len, closeAddress
+        global sock, udpPortRx, header_len, closeAddress
         updatedStruct = ""
         updatedSeqNum = 0
         while(True):
@@ -207,22 +203,22 @@ class socket:
                 updatedSeqNum = updatedStruct[8]
                 break
         closeNum = int(random.randint(10, 500))
-        FIN_ACKstruct = self.updateStruct(SOCK352_FIN + SOCK352_ACK, header_len, closeNum, updatedSeqNum + 1, 8)
-        udpSock.sendto(FIN_ACKstruct + "Accepted", closeAddress)
+        FIN_ACKstruct = self.create_header(SOCK352_FIN + SOCK352_ACK, header_len, closeNum, updatedSeqNum + 1, 8)
+        sock.sendto(FIN_ACKstruct + "Accepted", closeAddress)
         print("Sending FIN-ACK to client")
 
         while True:
-            updateStruct = self.getData()
-            if(updateStruct[1] == SOCK352_ACK):
+            create_header = self.getData()
+            if(create_header[1] == SOCK352_ACK):
                 print("Received ACK from client")
                 break
-        udpSock.close()
+        sock.close()
         print("Disconnected Successfully")
 
         return
 
     def send(self,buffer):
-        global seqNum, udpSock, lastAck
+        global seqNum, sock, lastAck
         lastAck = -1
         seqNum = 0
 
@@ -240,7 +236,7 @@ class socket:
         return bytessent
 
     def sendData(self, lock, buffer):
-        global udpSock, seqNum, lastAck, allAcknowledged, resend
+        global sock, seqNum, lastAck, allAcknowledged, resend
         allAcknowledged = False
         resend = False
         finalData = [buffer[i:i+PACKET_SIZE] for i in range(0, len(buffer), PACKET_SIZE)]
@@ -252,7 +248,7 @@ class socket:
                 continue
             currPayLoad = finalData[seqNum]
             currPayLoadLen = len(currPayLoad)
-            newStruct = self.updateStruct(SOCK352_SENTDATA, header_len, seqNum, 0, currPayLoadLen)
+            newStruct = self.create_header(SOCK352_DATA, header_len, seqNum, 0, currPayLoadLen)
             lock.acquire()
             if(resend == True):
                 print("RESENT DROPPED PACKET seqNum: " + str(seqNum))
@@ -260,7 +256,7 @@ class socket:
                 lock.release()
                 continue
             else:
-                udpSock.send(newStruct+currPayLoad)
+                sock.send(newStruct+currPayLoad)
                 seqNum += 1
                 lock.release()
         pass
@@ -285,7 +281,7 @@ class socket:
         pass
 
     def recv(self,nbytes):
-        global seqNum, udpSock, receivedData, recAddress
+        global seqNum, sock, receivedData, recAddress
         seqNum = 0
         receivedData = ""
         finalData = ""
@@ -304,9 +300,28 @@ class socket:
             dropped = random.randint(1,100)
             # if(dropped < 30):                                  #UTILIZE THIS TO TESST DROPS
             #     continue                                       #APPROX 30% DROPPED
-            newStruct = self.updateStruct(SOCK352_ACK, header_len, 0, seqNum,0)
-            udpSock.sendto(newStruct, recAddress)
+            newStruct = self.create_header(SOCK352_ACK, header_len, 0, seqNum,0)
+            sock.sendto(newStruct, recAddress)
             counter += len(receivedData)
             finalData += receivedData
             seqNum += 1
         return finalData
+        
+    def create_header(self, newFlags, newHeader_len, newSeqNo, newAckNo, newPayloadLen):
+        global sock
+        
+        version = 0x1
+        opt_ptr = 0x0
+        protocol = 0x0
+        checksum = 0x0
+        source_port = 0x0
+        dest_port = 0x0
+        window = 0x0
+        
+        flags = newFlags
+        header_len = newHeader_len
+        sequence_no = newSeqNo
+        ack_no = newAckNo
+        payload_len = newPayloadLen
+        
+        return udpPkt_hdr_data.pack(version, flags, opt_ptr, protocol, header_len, checksum, source_port, dest_port, sequence_no, ack_no, window, payload_len)
