@@ -1,8 +1,9 @@
 #!/usr/bin/python
 
-# This is the CS 352 Spring 2017 Client for the 1st programming
+# This is the CS 352 Spring 2017 Client for the 2nd programming
 # project
- 
+
+# (c) 2017, R. P. Martin, under the GPL version 2. 
 
 import argparse
 import time
@@ -19,24 +20,26 @@ def main():
     parser.add_argument('-u','--udpportRx', help='UDP port to use for receiving', required=True)
     parser.add_argument('-v','--udpportTx', help='UDP port to use for sending', required=False)
 
+
     # get the arguments into local variables 
     args = vars(parser.parse_args())
     filename = args['filename']
     destination = args['destination']
     udpportRx = args['udpportRx']
 
+    
     if (args['udpportTx']):
         udpportTx = args['udpportTx']
     else:
         udpportTx = ''
         
-    # the port is not used in part 1 assignment, except as a placeholder
+    # the port is not used in part 2 assignment, except as a placeholder
     if (args['port']): 
         port = args['port']
     else:
-        port = 1111 
+        port = 1111
 
-    # open the file for reading
+    # open the file to send to the server for reading
     if (filename):
         try: 
             filesize = os.path.getsize(filename)
@@ -60,36 +63,30 @@ def main():
     else:
         sock352.init(udpportRx,udpportRx)
 
-
+  
+    
+    # create a socket and connect to the remote server
     s = sock352.socket()
     s.connect((destination,port))
-    
-
+    #mesure the start stamp
+    start_stamp = time.clock() 
+	#load the whole file into memory
+    whole_file = fd.read()
+    #mesure its length
+    filesize = len(whole_file)
     longPacker = struct.Struct("!L")
-    fileLenPacked = longPacker.pack(filesize)
+    fileLenPacked = longPacker.pack(filesize);
     s.send(fileLenPacked)
+	
+    sent = s.send(whole_file)
+    if (sent != filesize):
+        raise RuntimeError("socket broken")
 
-
-    bytes_to_send = filesize
-
-    start_stamp = time.clock()    
-
-    file_contents = fd.read()
-
-    totalsent = 0
-    # make sure we sent the whole fragment 
-
-    totalsent = s.send(file_contents)
-    if (totalsent == 0):
-        raise RuntimeError("socket broken")    
     end_stamp = time.clock() 
     lapsed_seconds = end_stamp - start_stamp
     
-
-
     if (lapsed_seconds > 0.0):
-        print ("client1: sent %d bytes in %0.6f seconds, %0.6f MB/s " % (filesize, lapsed_seconds,
-(filesize/lapsed_seconds)/(1024*1024)))
+        print ("client1: sent %d bytes in %0.6f seconds, %0.6f MB/s " % (filesize, lapsed_seconds, (filesize/lapsed_seconds)/(1024*1024)))
     else:
         print ("client1: sent %d bytes in %d seconds, inf MB/s " % (filesize, lapsed_seconds))        
 
@@ -100,4 +97,3 @@ if __name__ == "__main__":
     main()
 
 
-    
