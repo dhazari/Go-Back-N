@@ -32,16 +32,16 @@ resend = False
 
 def init(UDPportTx,UDPportRx):
 
-    global sock, udpPortRx, udpPortTx
+    global sock, reciever, transmitter
     sock = syssock.socket(syssock.AF_INET, syssock.SOCK_DGRAM)
-    udpPortRx = int(UDPportRx)
+    reciever = int(UDPportRx)
     
     if(UDPportTx == ''):
-        udpPortTx = int(UDPportRx)
+        transmitter = int(UDPportRx)
     else:
-        udpPortTx = int(UDPportTx)
+        transmitter = int(UDPportTx)
 
-    sock.bind(('', udpPortRx))
+    sock.bind(('', reciever))
     sock.settimeout(0.2);
     
     pass
@@ -56,7 +56,7 @@ class socket:
 
     def connect(self,address):
     
-        global sock, seqNum, header_len, type, udpPortTx
+        global sock, seqNum, header_len, type, transmitter
         
         print("Attempting Connection")
         type = client
@@ -70,7 +70,7 @@ class socket:
         while True:
             print("Sent SYN to server")
             
-            sock.sendto(data,(address[0],udpPortTx))
+            sock.sendto(data,(address[0],transmitter))
             serverData = self.getData()
             
             ackServer = serverData[9]
@@ -82,10 +82,10 @@ class socket:
                 print("Failed to receive SYN-ACK")
 
         ackData = self.create_header(SOCK352_ACK, header_len, seqNum, seqNumServer, 0)
-        sock.sendto(ackData, (address[0], udpPortTx))
+        sock.sendto(ackData, (address[0], transmitter))
         print("Sent ACK to server")
 
-        sock.connect((address[0], udpPortTx))
+        sock.connect((address[0], transmitter))
         seqNum = seqNum + 1
         print("Connection Established")
         return
@@ -97,7 +97,7 @@ class socket:
     
         print("Attempting to connect to server ")
         
-        global sock, udpPortRx, seqNum, header_len, recAddress, type
+        global sock, reciever, seqNum, header_len, recAddress, type
         type = server
         updatedStruct = ""
         
@@ -157,11 +157,8 @@ class socket:
         return
 
     def closeClient(self):
-        global sock, header_len, udpPortTx, recAddress, closeAddress
-        #Send FIN
-        #Receive ACK
-        #Receive FIN
-        #Send ACK
+        global sock, header_len, transmitter, recAddress, closeAddress
+        
         closeNum = random.randint(1,100)
         FINstruct = self.create_header(SOCK352_FIN, header_len, closeNum, 0, 0)
         ackServer = -1
@@ -188,11 +185,7 @@ class socket:
 
 
     def closeServer(self):
-        #Receive FIN
-        #Send ACK
-        #Send FIN
-        #Receive ACK
-        global sock, udpPortRx, header_len, closeAddress
+        global sock, reciever, header_len, closeAddress
         updatedStruct = ""
         updatedSeqNum = 0
         while(True):
@@ -294,12 +287,9 @@ class socket:
                 newStruct = self.getData()
                 #at this point, receivedData is loaded with the actual data
                 recvSeqNum = newStruct[8]
-                ###print("now going in infinite loop: seqNum = " + str(seqNum) + " recvSeqNum = " + str(recvSeqNum))
-            #at this point, we received the correct seqNum, so we must send and ack for it
-            #also increment the counter
+                
             dropped = random.randint(1,100)
-            # if(dropped < 30):                                  #UTILIZE THIS TO TESST DROPS
-            #     continue                                       #APPROX 30% DROPPED
+                                             
             newStruct = self.create_header(SOCK352_ACK, header_len, 0, seqNum,0)
             sock.sendto(newStruct, recAddress)
             counter += len(receivedData)
