@@ -10,9 +10,6 @@ sock352PktHdrData = '!BBBBHHLLQQLL'
 udpPkt_hdr_data = struct.Struct(sock352PktHdrData)  
 header_len = 40
 seqNum = 0
-recAddress = ""
-receivedData = ""
-closeAddress = ""
 
 SOCK352_SYN = 0x01
 SOCK352_FIN = 0x02
@@ -23,12 +20,6 @@ SOCK352_DATA = 0x23
 
 PACKET_SIZE = 32000
 isClient = False
-#client = 1
-#server = 2
-
-prevAck = -1
-allAck = False
-retransmit = False
 
 def init(UDPportTx,UDPportRx):
 
@@ -49,6 +40,13 @@ def init(UDPportTx,UDPportRx):
 class socket:
 
     def __init__(self):
+      
+        recAddress = ""
+        receivedData = ""
+        closeAddress = ""
+        lastAck = -1
+        allAcknowledged = False
+        resend = False
         return
 
     def bind(self,address):
@@ -59,7 +57,7 @@ class socket:
         global sock, seqNum, header_len, isClient, transmitter
         
         #Is currently client
-        print("Attempting to connect to socket....")
+        print("Attempting Connection")
         isClient = True
         
         #generate random number
@@ -95,8 +93,7 @@ class socket:
 
         sock.connect((address[0], transmitter))
         seqNum += 1
-        print("Successfully connected")
-        
+        print("Connected")
         return
 
     def listen(self,backlog):
@@ -106,7 +103,8 @@ class socket:
         
         global sock, reciever, seqNum, header_len, recAddress, isClient
         
-        print("Attempting to connect to server....")
+        print("Attempting to connect to server ")
+
         
         #is currently the server
         isClient = False
