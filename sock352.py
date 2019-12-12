@@ -234,42 +234,42 @@ class socket:
         prevAck = -1
         seqNum = 0
 
-	#create two threads for sending the actual packets, and for sending back the actual acks, as suggested
+	    #create two threads for sending the actual packets, and for sending back the actual acks, as suggested
         lock = threading.Lock()
         sendDataThread = threading.Thread(target = self.sendData, args=(lock, buffer))
         ackDataThread = threading.Thread(target = self.ackData, args=(lock, buffer))
 
-	#start thread to send data, and then start thread to ack data
+	    #start thread to send data, and then start thread to ack data
         sendDataThread.start()
         ackDataThread.start()
 	
-	#block until both return -- if packet lost, retransmit 
+	    #block until both return -- if packet lost, retransmit 
         sendDataThread.join()
-	#do not continue until all packets retransmitted, all subsequent ACKs return
+	    #do not continue until all packets retransmitted, all subsequent ACKs return
         ackDataThread.join()
 
-	#return total bytes correctly sent
+	    #return total bytes correctly sent
         bytessent = len(buffer)
         return bytessent
 
     def sendData(self, lock, buffer):
 
 
-	#get current index + packet size until all data from 0-packet size has been accounted for
-	finalData = [buffer[i:i+PACKET_SIZE] for i in range(0, len(buffer), PACKET_SIZE)]        
-	
-	global sock, seqNum, prevAck, allAck, retransmit
-	
-	#set retransmit to false initially, update if resent necessary	
-	retransmit = False
-	
-	#default all packets have not been sent initially        
-	allAck = False
+        #get current index + packet size until all data from 0-packet size has been accounted for
+        finalData = [buffer[i:i+PACKET_SIZE] for i in range(0, len(buffer), PACKET_SIZE)]        
+
+        global sock, seqNum, prevAck, allAck, retransmit
+
+        #set retransmit to false initially, update if resent necessary	
+        retransmit = False
+
+        #default all packets have not been sent initially        
+        allAck = False
         
         while(allAck == False):
-		#if not all of the data has been sent, we stop and retransmit
-		#else, we keep going to get all data
-			#we stop once either seqnum is changed or until all of the packets have been ackd
+            #if not all of the data has been sent, we stop and retransmit
+            #else, we keep going to get all data
+            #we stop once either seqnum is changed or until all of the packets have been ackd
             if(seqNum == len(finalData)):
                 continue
 
@@ -278,12 +278,12 @@ class socket:
 
             newStruct = self.create_header(SOCK352_DATA, header_len, seqNum, 0, currPayLoadLen)
             lock.acquire()
-		#block until retransmit completes
+            #block until retransmit completes
             if(retransmit == True):
-		#ack not received, must retransmit
+                #ack not received, must retransmit
                 print("Resending dropped packet")
-		
-		#no longer need to retransmit dropped frame, udpate and stop blocking
+
+                #no longer need to retransmit dropped frame, udpate and stop blocking
                 retransmit = False 
                 lock.release()
                 continue
@@ -297,57 +297,69 @@ class socket:
         global seqNum, prevAck, allAck, retransmit
 
         finalData = [buffer[i:i+PACKET_SIZE] for i in range(0, len(buffer), PACKET_SIZE)]
-	#set initial time        
-	t0 = time.time()
+	    #set initial time        
+        t0 = time.time()
 
         while True:
             newStruct = self.getData()
-	    #retrive data from packet being sent
+	        #retrive data from packet being sent
             if(newStruct[0] == 0 and time.time() >= t0+0.2):
                 lock.acquire()
-		#lock data while thread runs, do not finish until all data has been sent
-                
-		retransmit = True
-		#send packet from last ACK, set timer
+                #lock data while thread runs, do not finish until all data has been sent
+
+                retransmit = True
+                #send packet from last ACK, set timer
                 seqNum = prevAck+1
-                
-		t0 = time.time()
+
+                t0 = time.time()
                 lock.release()
+                
             elif(newStruct[0] != 0):
                 prevAck = newStruct[9]
-                if(prevAck == len(finalData)-1):
-		    #break at end
+                if(newStruct[1] == SOCK352_FIN):
+                    self.close()
                     break
+                if(prevAck == len(finalData)-1):
+                    #break at end
+                    break
+                    
         allAck = True
         pass
 
     def recv(self,nbytes):
         global seqNum, sock, receivedData, recAddress 
-	#get sequence number from incoming packet, update accordingly
+	    #get sequence number from incoming packet, update accordingly
         seqNum = 0
         receivedData = ""
         finalData = ""
         counter = 0
 	
-        while(counter != nbytes):
-	    #initialize sequence number received as -1 (no data yet)
+        while counter != nbytes:
+	        #initialize sequence number received as -1 (no data yet)
             recvSeqNum = -1
             while(recvSeqNum != seqNum): 
                 newStruct = self.getData()
-		#received sequence number acquired, contains actual data from packet
+		        #received sequence number acquired, contains actual data from packet
                 #update received seq num to reflect packet num sent in
                 recvSeqNum = newStruct[8]
+                if(newStruct[1] == SOCK352_FIN):
+                    self.close()
+                    break
+                    
+            if(newStruct[1] == SOCK352_FIN):
+                break
 
             #create ACK                      
             newStruct = self.create_header(SOCK352_ACK, header_len, 0, seqNum,0)
             sock.sendto(newStruct, recAddress)
 
-	    #send ACK, update how much data has been received
+	        #send ACK, update how much data has been received
             counter += len(receivedData)
             finalData += receivedData
 
-	    #increase sequence number for next packet
+	        #increase sequence number for next packet
             seqNum += 1
+            
         return finalData
         
     def create_header(self, newFlags, newHeader_len, newSeqNo, newAckNo, newPayloadLen):
